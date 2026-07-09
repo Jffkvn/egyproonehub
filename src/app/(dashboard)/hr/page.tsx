@@ -18,7 +18,9 @@ import {
   Trash2,
   FileText,
   UserMinus,
-  Calendar
+  Calendar,
+  Mail,
+  Clock
 } from 'lucide-react';
 
 export default function HRManagement() {
@@ -78,6 +80,7 @@ export default function HRManagement() {
   const [startDate, setStartDate] = useState('');
 
   const [linkTargetUserId, setLinkTargetUserId] = useState('');
+  const [invitingEmployeeId, setInvitingEmployeeId] = useState<string | null>(null);
 
   const fetchHRData = async () => {
     if (!isSupabaseConfigured) return;
@@ -328,6 +331,52 @@ export default function HRManagement() {
     }
   };
 
+  // SEND SECURE PORTAL INVITE
+  const handleSendInvite = async (emp: Employee) => {
+    if (!emp.email) {
+      alert('Employee has no email address on file.');
+      return;
+    }
+    
+    setInvitingEmployeeId(emp.id);
+    try {
+      // Get current auth session to extract token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated: please sign in again.');
+      }
+
+      const response = await fetch('/api/invite-employee', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          employeeId: emp.id,
+          email: emp.email,
+          redirectTo: `${window.location.origin}/home`
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to send invite.');
+      }
+
+      alert(resData.is_resend 
+        ? `Portal invitation email successfully resent to ${emp.email}!`
+        : `Portal invitation email successfully sent to ${emp.email}!`
+      );
+      
+      fetchHRData();
+    } catch (err: any) {
+      alert('Error sending invite: ' + err.message);
+    } finally {
+      setInvitingEmployeeId(null);
+    }
+  };
+
   // LEAVE APPROVAL REVIEW SUBMISSION
   const handleReviewLeave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -544,23 +593,50 @@ export default function HRManagement() {
                       <td className="px-6 py-4">
                         {emp.user_id ? (
                           <div className="space-y-1">
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-primary bg-primary-tint border border-primary/20 px-2 py-0.5 rounded-full w-max">
-                              <CheckCircle size={10} /> Linked Profile
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-success bg-success-tint border border-success/20 px-2 py-0.5 rounded-full w-max">
+                              <CheckCircle size={10} /> Portal Active
                             </span>
                             <button
                               onClick={() => handleUnlinkAccount(emp)}
-                              className="text-[10px] text-danger hover:underline block font-semibold"
+                              className="text-[10px] text-danger hover:underline block font-semibold text-left"
                             >
                               Revoke Link
                             </button>
                           </div>
+                        ) : emp.invite_sent_at ? (
+                          <div className="space-y-1">
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-warning bg-warning-tint border border-warning/20 px-2 py-0.5 rounded-full w-max">
+                              <Clock size={10} /> Invite Sent
+                            </span>
+                            <div className="flex flex-col gap-0.5 text-[10px]">
+                              <button
+                                disabled={invitingEmployeeId === emp.id}
+                                onClick={() => handleSendInvite(emp)}
+                                className="text-primary hover:underline font-semibold disabled:opacity-50 text-left"
+                              >
+                                {invitingEmployeeId === emp.id ? 'Resending...' : 'Resend Invite'}
+                              </button>
+                              <button
+                                onClick={() => openLinkModal(emp)}
+                                className="text-navy hover:underline font-semibold text-left"
+                              >
+                                Link Account
+                              </button>
+                            </div>
+                          </div>
                         ) : (
-                          <button
-                            onClick={() => openLinkModal(emp)}
-                            className="flex items-center gap-1 text-[10px] font-bold text-navy hover:text-primary bg-background border border-border hover:border-primary/25 px-2 py-1 rounded-md transition-all"
-                          >
-                            <LinkIcon size={10} /> Link User account
-                          </button>
+                          <div className="space-y-1.5">
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-text-muted bg-neutral-gray/10 border border-border px-2 py-0.5 rounded-full w-max">
+                              <X size={10} /> No Portal Access
+                            </span>
+                            <button
+                              disabled={invitingEmployeeId === emp.id}
+                              onClick={() => handleSendInvite(emp)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-navy hover:text-primary bg-background border border-border hover:border-primary/25 px-2 py-1 rounded-md transition-all disabled:opacity-50"
+                            >
+                              <Mail size={10} /> {invitingEmployeeId === emp.id ? 'Sending...' : 'Send Invite'}
+                            </button>
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4">
@@ -1205,12 +1281,16 @@ export default function HRManagement() {
                 <div className="flex-1 text-right">
                   <span className="font-bold text-navy uppercase tracking-wider block mb-0.5">Portal Linking Status</span>
                   {selectedEmployee.user_id ? (
-                    <span className="text-[10px] font-bold text-primary bg-primary-tint border border-primary/20 px-2 py-0.5 rounded-full">
-                      Linked Profile
+                    <span className="text-[10px] font-bold text-success bg-success-tint border border-success/20 px-2 py-0.5 rounded-full">
+                      Portal Active
+                    </span>
+                  ) : selectedEmployee.invite_sent_at ? (
+                    <span className="text-[10px] font-bold text-warning bg-warning-tint border border-warning/20 px-2 py-0.5 rounded-full">
+                      Invite Sent (Pending)
                     </span>
                   ) : (
                     <span className="text-[10px] font-semibold text-text-muted bg-neutral-gray/10 border border-border px-2 py-0.5 rounded-full">
-                      Unlinked Portal
+                      No Portal Access
                     </span>
                   )}
                 </div>

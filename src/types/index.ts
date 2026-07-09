@@ -41,6 +41,7 @@ export interface Employee {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  invite_sent_at?: string | null;
 }
 
 export interface UserModuleOverride {
