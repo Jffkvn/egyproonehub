@@ -580,6 +580,45 @@ export default function MyWorkspace() {
                 </>
               )}
             </div>
+
+            {/* Set Account Password Box */}
+            <div className="border-t border-border pt-4 space-y-3">
+              <h4 className="font-bold text-navy text-[11px] uppercase tracking-wider">Set Portal Password</h4>
+              <p className="text-[10px] text-text-muted leading-relaxed">
+                Choose a new login password for future sessions:
+              </p>
+              <div className="space-y-2">
+                <input
+                  type="password"
+                  id="workspaceNewPassword"
+                  placeholder="New password (min 6 chars)"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-text focus:ring-1 focus:ring-primary focus:outline-none text-[11px] font-normal"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const passInput = document.getElementById('workspaceNewPassword') as HTMLInputElement;
+                    const password = passInput?.value;
+                    if (!password || password.length < 6) {
+                      showToast('error', 'Password must be at least 6 characters.');
+                      return;
+                    }
+                    try {
+                      const { error } = await supabase.auth.updateUser({ password });
+                      if (error) throw error;
+                      showToast('success', 'Portal login password updated successfully!');
+                      if (passInput) passInput.value = '';
+                    } catch (err: any) {
+                      showToast('error', err.message || 'Failed to update password.');
+                    }
+                  }}
+                  className="w-full py-2 bg-primary text-white text-[11px] font-bold rounded-lg hover:bg-primary/95 transition-all shadow-xs text-center cursor-pointer"
+                >
+                  Save Password
+                </button>
+              </div>
+            </div>
+
           </div>
 
         </div>
