@@ -91,3 +91,25 @@ $$\text{remaining\_balance} = \text{default\_days} - \sum \text{days\_requested}
 - Public holidays exceptions calendar list (currently only weekends are excluded from leave calculations).
 - Overlapping request double-booking collision checking.
 - Document management vault for medical/official attachments.
+
+---
+
+## 6. Security Patch (Atomic RPC Mutations & RLS Hardening)
+
+Applied security patch migration `20260709000000_milestone2_patch.sql` addressing code review recommendations:
+
+### A. Atomic Review & Cancellation RPCs
+- **`public.rpc_review_leave_request`**: Atomic RPC for HR admins to approve/reject pending requests. Resolves role server-side, locks row via `FOR UPDATE` to prevent race conditions, mutates status, and writes `LEAVE_REQUEST_APPROVE`/`LEAVE_REQUEST_REJECT` audits within the same transaction.
+- **`public.rpc_cancel_leave_request`**: Atomic RPC for employees to cancel their own pending requests. Enforces ownership checks on both user and linked employee IDs, locks the row, sets status to `'cancelled'`, and logs a `LEAVE_REQUEST_CREATE` cancellation audit.
+- Both functions use `SECURITY DEFINER` and `SET search_path = public` to prevent search path hijacking.
+
+### B. Dropped Direct Update Policies
+- Completely removed `leave_requests_update_cancel` and `leave_requests_update_admin` policies from `public.leave_requests`.
+- Standard client-side `.update()` queries are now blocked at the RLS database layer. All status updates must route through the atomic RPC transaction paths.
+
+### C. Audit Integrity Guarantees
+- Because logging is handled inside the database RPC, state changes and audit logging are fully transactional. If either the status update or the audit log write fails, the entire database transaction rolls back, guaranteeing zero orphaned or missing audits.
+
+### D. Warehouse Manager Project Visibility
+- Updated `projects_select_least_privilege` SELECT policy on `public.projects` to grant read visibility to users with the `'warehouse_manager'` role. This allows them to read names/status without requiring a PM/coordinator project assignment.
+

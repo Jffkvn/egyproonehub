@@ -334,25 +334,13 @@ export default function HRManagement() {
     if (!selectedRequest || !currentUser || !isSupabaseConfigured) return;
     try {
       const { error: reviewError } = await supabase
-        .from('leave_requests')
-        .update({
-          status: reviewAction,
-          approver_id: currentUser.id,
-          approver_notes: approverNotes || null,
-          decided_at: new Date().toISOString()
-        })
-        .eq('id', selectedRequest.id);
+        .rpc('rpc_review_leave_request', {
+          p_request_id: selectedRequest.id,
+          p_decision: reviewAction,
+          p_approver_notes: approverNotes || null
+        });
 
       if (reviewError) throw reviewError;
-
-      // Write Audit Log
-      await writeAuditLog(
-        currentUser.id,
-        reviewAction === 'approved' ? 'LEAVE_REQUEST_APPROVE' : 'LEAVE_REQUEST_REJECT',
-        'leave_requests',
-        selectedRequest.id,
-        `${reviewAction === 'approved' ? 'Approved' : 'Rejected'} leave request for employee: ${selectedRequest.employees?.full_name || 'Sarah Namono'} (${selectedRequest.days_requested} Days of ${selectedRequest.leave_types?.name || 'Leave'})`
-      );
 
       setReviewModalOpen(false);
       setSelectedRequest(null);

@@ -251,20 +251,11 @@ export default function MyWorkspace() {
     
     try {
       const { error: cancelError } = await supabase
-        .from('leave_requests')
-        .update({ status: 'cancelled' })
-        .eq('id', req.id);
+        .rpc('rpc_cancel_leave_request', {
+          p_request_id: req.id
+        });
 
       if (cancelError) throw cancelError;
-
-      // Write Audit log
-      await writeAuditLog(
-        user.id,
-        'LEAVE_REQUEST_CREATE', // logged under creation activity trail
-        'leave_requests',
-        req.id,
-        `Cancelled pending leave request for ${req.days_requested} day(s)`
-      );
 
       fetchWorkspaceData();
     } catch (err: any) {
