@@ -29,8 +29,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
     }
 
-    // 2. Validate caller role (only allow hr_admin)
-    const { data: callerProfile, error: profileError } = await clientSupabase
+    // 2. Initialize Admin Client
+    const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    // 3. Validate caller role (only allow hr_admin) using admin client to bypass client RLS context in route handler
+    const { data: callerProfile, error: profileError } = await adminSupabase
       .from('users')
       .select('role, is_active')
       .eq('id', callerUser.id)
@@ -40,18 +45,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: Insufficient privileges' }, { status: 403 });
     }
 
-    // 3. Parse request body
+    // 4. Parse request body
     const body = await req.json();
     const { employeeId, email, redirectTo } = body;
 
     if (!employeeId || !email) {
       return NextResponse.json({ error: 'Missing employeeId or email' }, { status: 400 });
     }
-
-    // 4. Initialize Admin Client
-    const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
 
     // Check if the employee already has an invitation sent
     const { data: emp, error: empError } = await adminSupabase
