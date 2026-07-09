@@ -201,6 +201,34 @@ export default function AdminSettings() {
     }
   };
 
+  const handleUpdateRole = async (newRole: string) => {
+    if (!selectedUser || !currentUser || !isSupabaseConfigured) return;
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ role: newRole })
+        .eq('id', selectedUser.id);
+
+      if (error) throw error;
+
+      // Write audit log
+      await writeAuditLog(
+        currentUser.id,
+        'USER_UPDATE',
+        'users',
+        selectedUser.id,
+        `Updated role of user ${selectedUser.full_name} (${selectedUser.email}) to ${newRole}`
+      );
+
+      // Update local state
+      setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, role: newRole } : u));
+      setSelectedUser(prev => prev ? { ...prev, role: newRole } : null);
+      alert(`Successfully updated base system role to ${newRole}`);
+    } catch (err: any) {
+      alert('Failed to update base system role: ' + err.message);
+    }
+  };
+
   // Leave Type Edit Start
   const startEditLeaveType = (lt: LeaveType) => {
     setEditingLeaveTypeId(lt.id);
@@ -349,9 +377,27 @@ export default function AdminSettings() {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  <div className="pb-3 border-b border-border">
-                    <span className="text-xs font-bold text-navy uppercase tracking-wider block mb-1">Active Overrides for</span>
-                    <span className="text-sm font-bold text-primary block">{selectedUser.full_name}</span>
+                  <div className="pb-3 border-b border-border flex justify-between items-end gap-4">
+                    <div>
+                      <span className="text-xs font-bold text-navy uppercase tracking-wider block mb-1">Active Overrides for</span>
+                      <span className="text-sm font-bold text-primary block">{selectedUser.full_name}</span>
+                    </div>
+                    <div className="flex flex-col gap-1 items-end">
+                      <label className="block text-[9px] font-bold text-text-muted uppercase tracking-wide">Base System Role</label>
+                      <select
+                        value={selectedUser.role}
+                        onChange={(e) => handleUpdateRole(e.target.value)}
+                        className="px-2.5 py-1 border border-border rounded-lg text-xs focus:outline-none bg-background text-navy font-bold uppercase"
+                      >
+                        <option value="employee">Employee</option>
+                        <option value="coordinator">Coordinator</option>
+                        <option value="pm">Project Manager</option>
+                        <option value="warehouse_manager">Warehouse Manager</option>
+                        <option value="cfo">CFO</option>
+                        <option value="hr_admin">HR Admin</option>
+                        <option value="md">MD</option>
+                      </select>
+                    </div>
                   </div>
 
                   {/* Existing Overrides List */}
