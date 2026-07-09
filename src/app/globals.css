@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0E7C5A;
+  --color-primary-light: #4FBFA0;
+  --color-navy: #17325C;
+  --color-background: #FAFAF8;
+  --color-surface: #FFFFFF;
+  --color-border: #E4E2DC;
+  --color-text: #1F2937;
+  --color-text-muted: #6B7280;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-neutral-gray: #E5E7EB;
+  
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root {
+  --background: var(--color-background);
+  --foreground: var(--color-text);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Custom layout scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Status Badges Tint Backgrounds */
+.bg-success-tint {
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.bg-warning-tint {
+  background-color: rgba(245, 158, 11, 0.1);
+}
+
+.bg-danger-tint {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.bg-primary-tint {
+  background-color: rgba(14, 124, 90, 0.1);
+}
+
+.bg-navy-tint {
+  background-color: rgba(23, 50, 92, 0.1);
+}
