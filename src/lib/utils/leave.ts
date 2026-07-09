@@ -2,7 +2,11 @@
  * Calculates the number of working days between two dates, inclusive.
  * Excludes Saturdays (6) and Sundays (0) following standard corporate workflows.
  */
-export function countWorkingDays(startDateStr: string | Date, endDateStr: string | Date): number {
+export function countWorkingDays(
+  startDateStr: string | Date, 
+  endDateStr: string | Date, 
+  publicHolidays: string[] = []
+): number {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
 
@@ -18,13 +22,34 @@ export function countWorkingDays(startDateStr: string | Date, endDateStr: string
     return 0;
   }
 
+  // Format public holidays into standardized YYYY-MM-DD strings
+  const holidaySet = new Set(
+    publicHolidays.map(dateStr => {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      // Format as YYYY-MM-DD in local time
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }).filter(s => s !== '')
+  );
+
   let count = 0;
   const current = new Date(start);
 
   while (current <= end) {
     const dayOfWeek = current.getDay();
+    // Exclude Sat (6) and Sun (0)
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      count++;
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
+
+      if (!holidaySet.has(formattedDate)) {
+        count++;
+      }
     }
     current.setDate(current.getDate() + 1);
   }

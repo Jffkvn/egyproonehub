@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { countWorkingDays, validateLeaveDates } from '@/lib/utils/leave';
 import { writeAuditLog } from '@/lib/audit/logger';
+import { formatUGX } from '@/lib/payroll/calculations';
 import {
   User,
   CreditCard,
@@ -20,7 +21,9 @@ import {
   AlertCircle,
   FileText,
   Trash2,
-  Shield
+  Shield,
+  Download,
+  Upload
 } from 'lucide-react';
 
 interface LeaveType {
@@ -68,6 +71,17 @@ export default function MyWorkspace() {
   
   // Balances map
   const [balances, setBalances] = useState<Record<string, { entitled: number; remaining: number }>>({});
+  
+  // Public holidays list
+  const [holidaysList, setHolidaysList] = useState<string[]>([]);
+
+  // Payslip history
+  const [myPayslips, setMyPayslips] = useState<any[]>([]);
+  const [selectedPayslip, setSelectedPayslip] = useState<any | null>(null);
+
+  // Attachments
+  const [myAttachments, setMyAttachments] = useState<any[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -88,6 +102,116 @@ export default function MyWorkspace() {
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const fetchMyAttachments = async () => {
+    if (!employee || !isSupabaseConfigured) return;
+    try {
+      const { data, error } = await supabase
+        .from('employee_attachments')
+        .select('*')
+        .eq('employee_id', employee.id)
+        .order('uploaded_at', { ascending: false });
+      if (!error) setMyAttachments(data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUploadMyAttachment = async (file: File) => {
+    if (!employee || !user || !isSupabaseConfigured) return;
+    setUploadingDoc(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      const storagePath = `${employee.id}/leave_support/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('employee-attachments')
+        .upload(storagePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase
+        .from('employee_attachments')
+        .insert([{
+          employee_id: employee.id,
+          category: 'leave_support',
+          file_name: file.name,
+          storage_path: storagePath,
+          mime_type: file.type,
+          uploaded_by: user.id
+        }]);
+
+      if (dbError) throw dbError;
+
+      showToast('success', 'Document uploaded successfully!');
+      fetchMyAttachments();
+      writeAuditLog(
+        user.id,
+        'EMPLOYEE_ATTACHMENT_UPLOAD',
+        'employee_attachments',
+        employee.id,
+        `Uploaded leave support attachment: ${file.name}`
+      );
+    } catch (err: any) {
+      console.error(err);
+      showToast('error', err.message || 'Failed to upload document.');
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleDeleteMyAttachment = async (id: string, storagePath: string, fileName: string) => {
+    if (!user || !isSupabaseConfigured) return;
+    if (!confirm('Are you sure you want to delete this document?')) return;
+    try {
+      const { error: storageError } = await supabase.storage
+        .from('employee-attachments')
+        .remove([storagePath]);
+      if (storageError) throw storageError;
+
+      const { error: dbError } = await supabase
+        .from('employee_attachments')
+        .delete()
+        .eq('id', id);
+      if (dbError) throw dbError;
+
+      showToast('success', 'Document deleted successfully!');
+      fetchMyAttachments();
+      writeAuditLog(
+        user.id,
+        'EMPLOYEE_ATTACHMENT_DELETE',
+        'employee_attachments',
+        id,
+        `Deleted attachment: ${fileName}`
+      );
+    } catch (err: any) {
+      console.error(err);
+      showToast('error', err.message || 'Failed to delete document.');
+    }
+  };
+
+  const handleDownloadMyDoc = async (storagePath: string, fileName: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('employee-attachments')
+        .download(storagePath);
+      if (error) throw error;
+      
+      const blob = new Blob([data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err: any) {
+      console.error(err);
+      showToast('error', 'Failed to download document.');
+    }
   };
 
   const fetchWorkspaceData = async () => {
@@ -114,13 +238,19 @@ export default function MyWorkspace() {
       if (annError) throw annError;
       setAnnouncements((annData || []) as Announcement[]);
 
-      // If no employee linked, we can skip fetching history and computing balances
+      // 3. Fetch public holidays list
+      const { data: holData } = await supabase
+        .from('public_holidays')
+        .select('holiday_date');
+      setHolidaysList(holData?.map((h: any) => h.holiday_date) || []);
+
+      // If no employee linked, we can skip fetching history, attachments, payroll, and computing balances
       if (!employee) {
         setLoading(false);
         return;
       }
 
-      // 3. Fetch employee leave history
+      // 4. Fetch employee leave history
       const { data: lhData, error: lhError } = await supabase
         .from('leave_requests')
         .select('*, leave_types(name, code)')
@@ -131,8 +261,23 @@ export default function MyWorkspace() {
       const requests = (lhData || []) as LeaveRequest[];
       setLeaveHistory(requests);
 
-      // 4. Compute provisional leave balances
-      // Balance = Entitlement - Approved requested days starting in current calendar year
+      // 5. Fetch employee secure documents
+      const { data: docData } = await supabase
+        .from('employee_attachments')
+        .select('*')
+        .eq('employee_id', employee.id)
+        .order('uploaded_at', { ascending: false });
+      setMyAttachments(docData || []);
+
+      // 6. Fetch employee finalized payslips
+      const { data: payData } = await supabase
+        .from('payroll_runs')
+        .select('*, payroll_periods(name, start_date, end_date)')
+        .eq('employee_id', employee.id)
+        .order('created_at', { ascending: false });
+      setMyPayslips(payData || []);
+
+      // 7. Compute provisional leave balances
       const currentYear = new Date().getFullYear();
       const balancesMap: Record<string, { entitled: number; remaining: number }> = {};
       
@@ -175,14 +320,14 @@ export default function MyWorkspace() {
         setDaysRequested(0);
       } else {
         setFormError(null);
-        const days = countWorkingDays(startDate, endDate);
+        const days = countWorkingDays(startDate, endDate, holidaysList);
         setDaysRequested(days);
       }
     } else {
       setDaysRequested(0);
       setFormError(null);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, holidaysList]);
 
   if (!user) return null;
 
@@ -210,6 +355,20 @@ export default function MyWorkspace() {
       if (!confirm(`Warning: Your request of ${daysRequested} days exceeds your provisional remaining balance for ${typeName} (${currentBalance.remaining} days). Do you still wish to submit?`)) {
         return;
       }
+    }
+
+    // Check overlapping requests
+    const hasOverlap = leaveHistory.some(req => {
+      if (req.status === 'rejected' || req.status === 'cancelled') return false;
+      const reqStart = new Date(req.start_date);
+      const reqEnd = new Date(req.end_date);
+      const newStart = new Date(startDate);
+      const newEnd = new Date(endDate);
+      return (newStart <= reqEnd && newEnd >= reqStart);
+    });
+    if (hasOverlap) {
+      setFormError('Submit Block: You have an overlapping pending or approved leave request during this date range.');
+      return;
     }
 
     try {
@@ -503,6 +662,153 @@ export default function MyWorkspace() {
                   </table>
                 </div>
               </div>
+
+              {/* PAYSLIP HISTORY CARD */}
+              <div className="bg-surface border border-border rounded-xl shadow-2xs overflow-hidden mt-6">
+                <div className="px-6 py-4 border-b border-border bg-background/25 flex justify-between items-center">
+                  <h3 className="font-bold text-navy text-sm flex items-center gap-2">
+                    <FileText className="text-primary w-5 h-5" />
+                    My Salary Payslips
+                  </h3>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-sm text-text-muted">
+                    <thead className="bg-background/40 font-semibold text-navy text-xs uppercase tracking-wider border-b border-border">
+                      <tr>
+                        <th className="px-6 py-3">Period</th>
+                        <th className="px-6 py-3 text-right">Gross Salary</th>
+                        <th className="px-6 py-3 text-right">PAYE Tax</th>
+                        <th className="px-6 py-3 text-right">NSSF (5%)</th>
+                        <th className="px-6 py-3 text-right">Net Pay</th>
+                        <th className="px-6 py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-xs font-mono">
+                      {myPayslips.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-6 text-center text-xs text-text-muted italic font-sans">
+                            No finalized payslips available yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        myPayslips.map((pay) => (
+                          <tr key={pay.id} className="hover:bg-background/25 transition-colors">
+                            <td className="px-6 py-4 font-sans font-bold text-navy">
+                              {pay.payroll_periods?.name || 'Payroll Run'}
+                            </td>
+                            <td className="px-6 py-4 text-right text-text">{formatUGX(pay.gross_salary)}</td>
+                            <td className="px-6 py-4 text-right text-danger font-semibold">-{formatUGX(pay.paye_amount)}</td>
+                            <td className="px-6 py-4 text-right text-danger">-{formatUGX(pay.nssf_employee)}</td>
+                            <td className="px-6 py-4 text-right text-primary font-bold">{formatUGX(pay.net_pay)}</td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => setSelectedPayslip(pay)}
+                                className="px-2.5 py-1 bg-primary text-white text-[10px] font-bold rounded-md hover:bg-primary/95 transition-all shadow cursor-pointer font-sans"
+                              >
+                                Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* MY SECURE ATTACHMENTS VAULT */}
+              <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 mt-6 space-y-6">
+                <div className="flex items-center justify-between border-b border-border pb-3.5">
+                  <h3 className="text-base font-bold text-navy flex items-center gap-2">
+                    <Shield className="text-primary w-5 h-5" />
+                    My Supporting Documents & Attachments
+                  </h3>
+                </div>
+
+                {/* Upload Form */}
+                <div className="bg-background/25 border border-border rounded-lg p-4 space-y-3">
+                  <h4 className="text-xs font-bold text-navy uppercase tracking-wider">Upload Support Document (e.g. Medical Cert)</h4>
+                  <div className="flex flex-col sm:flex-row items-end gap-3">
+                    <div className="flex-1 w-full">
+                      <label className="block text-[9px] font-bold text-navy uppercase tracking-wider mb-1">Doc Category</label>
+                      <div className="w-full px-2 py-1.5 border border-border rounded-lg text-xs bg-background text-text-muted select-none">
+                        Leave Supporting Proof
+                      </div>
+                    </div>
+                    <div className="flex-1 w-full">
+                      <label className="block text-[9px] font-bold text-navy uppercase tracking-wider mb-1 font-sans">Choose File</label>
+                      <input
+                        type="file"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadMyAttachment(file);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="w-full text-xs text-text-muted file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                  {uploadingDoc && (
+                    <div className="text-[10px] text-primary italic font-bold flex items-center gap-1 animate-pulse">
+                      <Clock size={12} /> Uploading file to secure vault...
+                    </div>
+                  )}
+                </div>
+
+                {/* Attachments List Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-background/25 text-navy font-bold">
+                        <th className="px-4 py-2">Document Name</th>
+                        <th className="px-4 py-2">Category</th>
+                        <th className="px-4 py-2">Uploaded At</th>
+                        <th className="px-4 py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {myAttachments.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-4 text-center text-text-muted italic">
+                            No documents stored in your vault.
+                          </td>
+                        </tr>
+                      ) : (
+                        myAttachments.map((doc) => (
+                          <tr key={doc.id} className="hover:bg-background/10">
+                            <td className="px-4 py-3 font-bold text-text truncate max-w-xs">{doc.file_name}</td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-primary-tint text-primary border border-primary/10">
+                                {doc.category}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-text-muted">{new Date(doc.uploaded_at).toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleDownloadMyDoc(doc.storage_path, doc.file_name)}
+                                  className="p-1 text-primary hover:bg-primary-tint rounded-lg flex items-center gap-1 text-[10px] font-bold cursor-pointer"
+                                >
+                                  <Download size={13} className="w-3.5 h-3.5" /> Download
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteMyAttachment(doc.id, doc.storage_path, doc.file_name)}
+                                  className="p-1 text-danger hover:bg-danger-tint rounded-lg cursor-pointer"
+                                >
+                                  <Trash2 size={13} className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -725,6 +1031,140 @@ export default function MyWorkspace() {
           </div>
         </div>
       )}
+
+      {/* PAYSLIP DETAIL MODAL */}
+      {selectedPayslip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
+          <div className="max-w-xl w-full bg-surface border border-border rounded-xl shadow-2xl overflow-hidden m-4">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-background/25">
+              <h3 className="font-bold text-navy text-sm flex items-center gap-2">
+                <FileText size={17} className="text-primary" /> Payslip Receipt Preview
+              </h3>
+              <button
+                onClick={() => setSelectedPayslip(null)}
+                className="p-1 text-text-muted hover:text-text hover:bg-background rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+              {/* Receipt Header */}
+              <div className="text-center space-y-1">
+                <h2 className="text-lg font-extrabold text-navy tracking-wider">EGYPRO UGANDA LIMITED</h2>
+                <p className="text-[10px] text-text-muted uppercase font-semibold">Kampala, Uganda • Payslip Receipt Statement</p>
+                <div className="inline-block px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-bold mt-2">
+                  Period: {selectedPayslip.payroll_periods?.name}
+                </div>
+              </div>
+
+              {/* Employee Summary Info */}
+              <div className="grid grid-cols-2 gap-4 text-xs bg-background/25 border border-border rounded-lg p-4 font-sans">
+                <div>
+                  <span className="text-[10px] text-text-muted block uppercase font-bold">Employee Name</span>
+                  <span className="font-bold text-navy text-sm">{employee?.full_name}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted block uppercase font-bold">Position</span>
+                  <span className="text-text">{employee?.position || 'Staff'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted block uppercase font-bold">Department</span>
+                  <span className="text-text">{employee?.department || 'Operations'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted block uppercase font-bold">Tax Category</span>
+                  <span className="text-text uppercase font-mono">{employee?.tax_category || 'local'}</span>
+                </div>
+              </div>
+
+              {/* Salary Breakdown Details */}
+              <div className="space-y-3 font-sans">
+                <h4 className="text-xs font-bold text-navy uppercase tracking-wider border-b border-border pb-1">Earnings Breakdown</h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Basic Contracted Gross Salary</span>
+                    <span className="font-mono text-text">{formatUGX(selectedPayslip.gross_salary)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold border-t border-border pt-1.5">
+                    <span className="text-navy">Total Gross Earnings</span>
+                    <span className="font-mono text-navy">{formatUGX(selectedPayslip.gross_salary)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 font-sans">
+                <h4 className="text-xs font-bold text-navy uppercase tracking-wider border-b border-border pb-1">Statutory & Other Deductions</h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">PAYE Income Tax Deduction (Statutory)</span>
+                    <span className="font-mono text-danger font-semibold">-{formatUGX(selectedPayslip.paye_amount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">NSSF Provident Fund (Employee 5%)</span>
+                    <span className="font-mono text-danger font-semibold">-{formatUGX(selectedPayslip.nssf_employee)}</span>
+                  </div>
+                  {Number(selectedPayslip.leave_deduction_amount) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Unpaid Leave Deductions</span>
+                      <span className="font-mono text-danger">-{formatUGX(selectedPayslip.leave_deduction_amount)}</span>
+                    </div>
+                  )}
+                  {Number(selectedPayslip.other_deductions) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Other Adjustments / Deductions</span>
+                      <span className="font-mono text-danger">-{formatUGX(selectedPayslip.other_deductions)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold border-t border-border pt-1.5">
+                    <span className="text-navy">Total Deductions</span>
+                    <span className="font-mono text-danger">
+                      -{formatUGX(
+                        Number(selectedPayslip.paye_amount) +
+                        Number(selectedPayslip.nssf_employee) +
+                        Number(selectedPayslip.leave_deduction_amount) +
+                        Number(selectedPayslip.other_deductions)
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Pay Hero Summary */}
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 text-center font-sans">
+                <span className="text-[10px] text-primary block uppercase font-bold tracking-wider">Net Take-Home Pay</span>
+                <span className="text-2xl font-extrabold text-primary font-mono block mt-1">{formatUGX(selectedPayslip.net_pay)}</span>
+                <span className="text-[9px] text-text-muted block mt-1 font-semibold uppercase">Transferred to registered bank details / MM account</span>
+              </div>
+
+              {/* Employer Contributions Info */}
+              <div className="border-t border-border pt-4 text-[10px] text-text-muted space-y-1 bg-background/10 p-3 rounded-lg font-sans">
+                <span className="font-bold text-navy uppercase block mb-1">Organization Contributions Info (Non-deducted)</span>
+                <div className="flex justify-between">
+                  <span>NSSF Employer Contribution (10%)</span>
+                  <span className="font-mono">{formatUGX(selectedPayslip.nssf_employer)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-border p-4 bg-background/25 flex gap-3 text-xs font-sans">
+              <button
+                onClick={() => window.print()}
+                className="flex-1 py-2 bg-navy text-white font-bold rounded-lg transition-all shadow-md text-center cursor-pointer"
+              >
+                Print Payslip
+              </button>
+              <button
+                onClick={() => setSelectedPayslip(null)}
+                className="flex-1 py-2 border border-border hover:bg-background text-text font-bold rounded-lg transition-all text-center cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
           ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
