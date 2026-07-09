@@ -12,7 +12,8 @@ import {
   PackageOpen,
   ClipboardCheck,
   AlertCircle,
-  Coins
+  Coins,
+  Clock
 } from 'lucide-react';
 
 export default function HomeDashboard() {
@@ -30,6 +31,7 @@ export default function HomeDashboard() {
 
   const [projectCount, setProjectCount] = useState(0);
   const [employeeCount, setEmployeeCount] = useState(0);
+  const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [activeProjects, setActiveProjects] = useState<Project[]>([]);
   const [assignedProjectsCount, setAssignedProjectsCount] = useState(0);
 
@@ -64,6 +66,13 @@ export default function HomeDashboard() {
           .eq('user_id', user.id)
           .is('unassigned_at', null);
         setAssignedProjectsCount(assignCount || 0);
+
+        // Fetch pending leaves count
+        const { count: leavesCount } = await supabase
+          .from('leave_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        setPendingLeavesCount(leavesCount || 0);
       } catch (err) {
         console.error('Error loading dashboard stats:', err);
       }
@@ -79,7 +88,7 @@ export default function HomeDashboard() {
       case 'hr_admin':
         return (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-surface p-6 rounded-xl border border-border shadow-2xs">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xs font-bold text-primary uppercase tracking-wider">Total Headcount</span>
@@ -87,6 +96,15 @@ export default function HomeDashboard() {
                 </div>
                 <div className="text-3xl font-extrabold text-navy">{employeeCount}</div>
                 <p className="text-xs text-text-muted mt-2">Active employee directory records</p>
+              </div>
+
+              <div className="bg-surface p-6 rounded-xl border border-border shadow-2xs">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold text-warning uppercase tracking-wider">Pending Leave Reviews</span>
+                  <Clock className="text-warning w-5 h-5 animate-pulse" />
+                </div>
+                <div className="text-3xl font-extrabold text-navy">{pendingLeavesCount}</div>
+                <p className="text-xs text-text-muted mt-2">Requests awaiting HR approval</p>
               </div>
 
               <div className="bg-surface p-6 rounded-xl border border-border shadow-2xs">
