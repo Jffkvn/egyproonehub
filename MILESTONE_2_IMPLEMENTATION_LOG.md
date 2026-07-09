@@ -113,3 +113,20 @@ Applied security patch migration `20260709000000_milestone2_patch.sql` addressin
 ### D. Warehouse Manager Project Visibility
 - Updated `projects_select_least_privilege` SELECT policy on `public.projects` to grant read visibility to users with the `'warehouse_manager'` role. This allows them to read names/status without requiring a PM/coordinator project assignment.
 
+---
+
+## 7. Production Seed Cleanup & QA Workflow
+
+Applied a cleanup refactor to move test datasets outside of core migration scripts:
+
+### A. Seed Separation
+- **Production Migrations Cleaned**: Removed the default test data block from the end of `20260708000001_milestone2_schema.sql` (previously inserting Sarah Namono, Joseph Okello, and sample leave requests).
+- **Corporate Announcement Retained**: Kept the welcome message in the live database without hardcoding it in future deployment seeds.
+- **QA Seed Files**: Created `supabase/seed/dev_only_seed.sql` and `supabase/seed/README.md` to define testing inputs. Unlinked testing profiles are loaded unlinked by default.
+
+### B. Owner Portal Linking & QA Guidelines
+- **Real Employee Profile**: Jeff’s active admin login (`jffkvn@gmail.com`) is mapped to a real employee profile (`Jeff Adhaya`).
+- **Safety Rule**: No migration or seed file uses `LIMIT 1` to link fake employee data to whichever real user happens to be created first.
+- **Testing Path**: Testers manually add fake test logins in Supabase Auth and link them to the dev seed profiles using the UI or SQL scripts.
+
+
