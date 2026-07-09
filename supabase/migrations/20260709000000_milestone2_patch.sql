@@ -51,10 +51,6 @@ BEGIN
     RAISE EXCEPTION 'Leave request not found';
   END IF;
 
-  -- Verify the request is still pending
-  IF v_request.status != 'pending' THEN
-    RAISE EXCEPTION 'Conflict: Leave request is already decided or cancelled';
-  END IF;
 
   -- Perform status mutation update
   UPDATE public.leave_requests
@@ -85,7 +81,7 @@ BEGIN
     CASE WHEN p_decision = 'approved' THEN 'LEAVE_REQUEST_APPROVE' ELSE 'LEAVE_REQUEST_REJECT' END,
     'leave_requests',
     p_request_id,
-    initcap(p_decision) || ' leave request for employee: ' || COALESCE(v_emp_name, 'Sarah Namono') || ' (' || COALESCE(v_request.days_requested::text, '0') || ' Days of ' || COALESCE(v_leave_name, 'Leave') || ')',
+    initcap(p_decision) || ' leave request for employee: ' || COALESCE(v_emp_name, 'Unknown Employee') || ' (' || COALESCE(v_request.days_requested::text, '0') || ' Days of ' || COALESCE(v_leave_name, 'Leave') || ')',
     jsonb_build_object('approver_notes', p_approver_notes)
   );
 
@@ -166,7 +162,7 @@ BEGIN
   )
   VALUES (
     v_caller_id,
-    'LEAVE_REQUEST_CREATE',
+    'LEAVE_REQUEST_CANCEL',
     'leave_requests',
     p_request_id,
     'Cancelled pending leave request for ' || COALESCE(v_request.days_requested::text, '0') || ' day(s) of ' || COALESCE(v_leave_name, 'Leave'),
