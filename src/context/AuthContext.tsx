@@ -33,58 +33,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const fetchProfileAndPermissions = async (userId: string): Promise<void> => {
+  const userIdRef = useRef<string | null>(null);
+
+  const fetchProfileAndPermissions = async (userId: string, isRefetch: boolean = false): Promise<void> => {
     if (!isSupabaseConfigured) return;
     if (fetchingPromiseRef.current) return fetchingPromiseRef.current;
 
     const promise = (async () => {
       try {
-        // 1. Fetch system user profile
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .eq('is_active', true)
-          .single();
+        // Run the user and employee lookups in parallel, they don't depend on each other.
+        const [userResult, employeeResult] = await Promise.all([
+          supabase.from('users').select('*').eq('id', userId).eq('is_active', true).single(),
+          supabase.from('employees').select('*').eq('user_id', userId).eq('status', 'active').maybeSingle(),
+        ]);
+
+        const { data: userData, error: userError } = userResult;
 
         if (userError || !userData) {
-          // User profile doesn't exist (e.g. signup trigger delay or disabled account)
-          setUser(null);
-          setEmployee(null);
-          setEffectiveModules(['my']);
+          // A failed query here does NOT mean the session is invalid. Only treat this as
+          // "logged out" on the initial load. A refetch triggered by a duplicate SIGNED_IN
+          // or token-refresh event should never sign an already-authenticated person out
+          // just because this particular query hit a transient error.
+          if (!isRefetch) {
+            setUser(null);
+            userIdRef.current = null;
+            setEmployee(null);
+            setEffectiveModules(['my']);
+          } else {
+            console.error('Profile refetch failed, keeping existing session state:', userError);
+            setError('We had trouble refreshing your profile. Some info may be out of date.');
+          }
           return;
         }
 
         setUser(userData as User);
+        userIdRef.current = userData.id;
+        setEmployee(employeeResult.data as Employee);
 
-        // 2. Fetch linked employee record (optional)
-        const { data: employeeData } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .maybeSingle();
+        // Role defaults and overrides also don't depend on each other, run in parallel.
+        const [roleResult, overridesResult] = await Promise.all([
+          supabase.from('roles').select('default_modules').eq('role_name', userData.role).single(),
+          supabase.from('user_module_overrides').select('module_key, access_type').eq('user_id', userId),
+        ]);
 
-        setEmployee(employeeData as Employee);
+        const defaultModules = roleResult.error || !roleResult.data
+          ? ['my']
+          : (roleResult.data.default_modules as string[]);
+        const overrides = (overridesResult.data || []) as UserModuleOverride[];
 
-        // 3. Fetch default modules for the user's role
-        const { data: roleData, error: roleError } = await supabase
-          .from('roles')
-          .select('default_modules')
-          .eq('role_name', userData.role)
-          .single();
-
-        const defaultModules = roleError || !roleData ? ['my'] : (roleData.default_modules as string[]);
-
-        // 4. Fetch module overrides
-        const { data: overridesData } = await supabase
-          .from('user_module_overrides')
-          .select('module_key, access_type')
-          .eq('user_id', userId);
-
-        const overrides = (overridesData || []) as UserModuleOverride[];
-
-        // 5. Calculate effective module permissions
         const resolved = resolveEffectiveModules(defaultModules, overrides);
         setEffectiveModules(resolved);
       } catch (err: any) {
@@ -134,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfileAndPermissions(session.user.id);
         } else {
           setUser(null);
+          userIdRef.current = null;
           setEmployee(null);
           setEffectiveModules(['my']);
         }
@@ -156,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (event === 'SIGNED_OUT') {
           setUser(null);
+          userIdRef.current = null;
           setEmployee(null);
           setEffectiveModules(['my']);
           setLoading(false);
@@ -169,11 +167,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await fetchProfileAndPermissions(session.user.id);
             setLoading(false);
             initialLoadDone.current = true;
+          } else if (event === 'SIGNED_IN' && userIdRef.current === session.user.id) {
+            // Supabase fires SIGNED_IN on things that aren't a real new login too,
+            // token refresh, tab refocus, multiple tabs. If it's the same user we
+            // already have loaded, there's nothing to do, don't re-run the whole
+            // profile fetch and risk a transient error bouncing them to /login.
           } else if (event === 'USER_UPDATED' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
-            await fetchProfileAndPermissions(session.user.id);
+            await fetchProfileAndPermissions(session.user.id, /* isRefetch */ true);
           }
         } else if (initialLoadDone.current && !fetchingPromiseRef.current) {
           setUser(null);
+          userIdRef.current = null;
           setEmployee(null);
           setEffectiveModules(['my']);
           setLoading(false);
@@ -213,6 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
       setUser(null);
+      userIdRef.current = null;
       setEmployee(null);
       setEffectiveModules(['my']);
       router.replace('/login');
