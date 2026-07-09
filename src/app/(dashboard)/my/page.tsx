@@ -19,7 +19,8 @@ import {
   CheckCircle,
   AlertCircle,
   FileText,
-  Trash2
+  Trash2,
+  Shield
 } from 'lucide-react';
 
 interface LeaveType {
@@ -366,13 +367,30 @@ export default function MyWorkspace() {
             </h3>
 
             {!employee ? (
-              <div className="py-10 text-center">
-                <p className="text-sm text-text-muted italic mb-4">No employee record linked to this system user account.</p>
-                <div className="p-4 bg-background border border-border rounded-lg text-xs text-text-muted text-left max-w-md mx-auto leading-relaxed">
-                  <span className="font-bold text-navy block mb-1">Self-Service Access Disabled</span>
-                  To access leave requests, banking info, and payroll details, an HR Administrator must link your employee record to your system email login in the HR Directory.
+              user.role === 'hr_admin' ? (
+                <div className="py-8 text-center space-y-4">
+                  <div className="w-12 h-12 bg-primary-tint border border-primary/20 rounded-full flex items-center justify-center mx-auto text-primary">
+                    <Shield size={22} />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-2">
+                    <h4 className="font-bold text-navy text-sm">System Operations & Admin Account</h4>
+                    <p className="text-xs text-text-muted leading-relaxed">
+                      You are logged in as a master administrator/support operator. This account is intentionally unlinked from the employee directory roster.
+                    </p>
+                    <div className="pt-2 text-[10px] text-text-muted">
+                      Use the sidebar menu to access the HR Management roster, configure organization policies, or review system audits.
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="py-10 text-center">
+                  <p className="text-sm text-text-muted italic mb-4">No employee record linked to this system user account.</p>
+                  <div className="p-4 bg-background border border-border rounded-lg text-xs text-text-muted text-left max-w-md mx-auto leading-relaxed">
+                    <span className="font-bold text-navy block mb-1">Self-Service Access Disabled</span>
+                    To access leave requests, banking info, and payroll details, an HR Administrator must link your employee record to your system email login in the HR Directory.
+                  </div>
+                </div>
+              )
             ) : (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-text-muted">

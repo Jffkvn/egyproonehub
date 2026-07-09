@@ -7,7 +7,7 @@ This directory contains test seed files and workflow guidelines that are kept se
 ## The Production Operating Model
 
 1. **Owner / Support Login**:
-   - The primary account `jffkvn@gmail.com` is linked to a real employee profile (`Jeff Adhaya`) with appropriate permissions to onboard employees and manage systems.
+   - The primary account `jffkvn@gmail.com` is a master admin/support system login with full control and visibility, and is intentionally unlinked from any record in the `employees` table.
 2. **Onboarding Real Employees**:
    - Real staff details and contract titles are added directly through the **HR Management** UI panel.
 3. **Audit Log Safeguards**:

@@ -125,7 +125,9 @@ Applied a cleanup refactor to move test datasets outside of core migration scrip
 - **QA Seed Files**: Created `supabase/seed/dev_only_seed.sql` and `supabase/seed/README.md` to define testing inputs. Unlinked testing profiles are loaded unlinked by default.
 
 ### B. Owner Portal Linking & QA Guidelines
-- **Real Employee Profile**: Jeff’s active admin login (`jffkvn@gmail.com`) is mapped to a real employee profile (`Jeff Adhaya`).
+- **Master Admin / Support Account**: Jeff’s active admin login (`jffkvn@gmail.com`) is designated as a system master/support account.
+- **No Employee Record**: Jeff is not stored as an employee in `public.employees`. Employee rows are reserved strictly for actual company staff or deliberate mock personas.
+- **UI Graceful Empty State**: The My Workspace panel handles unlinked master accounts gracefully by rendering a dedicated system administrator dashboard card instead of a disabled self-service warning.
 - **Safety Rule**: No migration or seed file uses `LIMIT 1` to link fake employee data to whichever real user happens to be created first.
 - **Testing Path**: Testers manually add fake test logins in Supabase Auth and link them to the dev seed profiles using the UI or SQL scripts.
 
