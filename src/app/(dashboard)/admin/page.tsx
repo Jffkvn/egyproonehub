@@ -53,6 +53,14 @@ export default function AdminSettings() {
 
   const [loading, setLoading] = useState(true);
 
+  // Toast Notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const fetchAdminData = async () => {
     if (!isSupabaseConfigured) return;
     setLoading(true);
@@ -123,10 +131,10 @@ export default function AdminSettings() {
         `Updated organization settings: Name: ${companyName}, Currency: ${defaultCurrency}`
       );
 
-      alert('Organization settings updated successfully.');
+      showToast('success', 'Organization settings updated successfully.');
       fetchAdminData();
     } catch (err: any) {
-      alert(err.message || 'Failed to update organization settings');
+      showToast('error', err.message || 'Failed to update organization settings');
     }
   };
 
@@ -142,7 +150,7 @@ export default function AdminSettings() {
       if (error) throw error;
       setActiveOverrides((data || []) as UserModuleOverride[]);
     } catch (err: any) {
-      alert('Error fetching overrides: ' + err.message);
+      showToast('error', 'Error fetching overrides: ' + err.message);
     }
   };
 
@@ -170,9 +178,10 @@ export default function AdminSettings() {
         `Added override for user ${selectedUser.full_name}: ${newModuleKey} -> ${newAccessType}`
       );
 
+      showToast('success', 'Module permission override created successfully.');
       handleFetchOverrides(selectedUser);
     } catch (err: any) {
-      alert(err.message || 'Failed to create module override');
+      showToast('error', err.message || 'Failed to create module override');
     }
   };
 
@@ -195,9 +204,10 @@ export default function AdminSettings() {
         `Removed module override configuration for user ${selectedUser.full_name}`
       );
 
+      showToast('success', 'Module override successfully removed.');
       handleFetchOverrides(selectedUser);
     } catch (err: any) {
-      alert('Failed to remove override: ' + err.message);
+      showToast('error', 'Failed to remove override: ' + err.message);
     }
   };
 
@@ -223,9 +233,9 @@ export default function AdminSettings() {
       // Update local state
       setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, role: newRole } : u));
       setSelectedUser(prev => prev ? { ...prev, role: newRole } : null);
-      alert(`Successfully updated base system role to ${newRole}`);
+      showToast('success', `Successfully updated base system role to ${newRole}`);
     } catch (err: any) {
-      alert('Failed to update base system role: ' + err.message);
+      showToast('error', 'Failed to update base system role: ' + err.message);
     }
   };
 
@@ -263,8 +273,9 @@ export default function AdminSettings() {
 
       setEditingLeaveTypeId(null);
       fetchAdminData();
+      showToast('success', `Leave policy updated successfully.`);
     } catch (err: any) {
-      alert('Failed to update leave type: ' + err.message);
+      showToast('error', 'Failed to update leave type: ' + err.message);
     }
   };
 
@@ -581,6 +592,15 @@ export default function AdminSettings() {
           </table>
         </div>
       </div>
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
+          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        `}>
+          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
+          <span className="text-xs font-semibold">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
+        </div>
+      )}
     </div>
   );
 }

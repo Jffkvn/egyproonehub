@@ -82,6 +82,14 @@ export default function MyWorkspace() {
   const [reason, setReason] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Toast Notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const fetchWorkspaceData = async () => {
     if (!user || !isSupabaseConfigured) return;
     setLoading(true);
@@ -240,6 +248,7 @@ export default function MyWorkspace() {
       setDaysRequested(0);
       setReason('');
       fetchWorkspaceData();
+      showToast('success', 'Leave request submitted successfully!');
     } catch (err: any) {
       setFormError(err.message || 'Failed to submit leave request.');
     }
@@ -259,10 +268,14 @@ export default function MyWorkspace() {
       if (cancelError) throw cancelError;
 
       fetchWorkspaceData();
+      showToast('success', 'Leave request cancelled successfully!');
     } catch (err: any) {
-      alert('Failed to cancel request: ' + err.message);
+      showToast('error', 'Failed to cancel request: ' + err.message);
     }
   };
+
+  const displayName = employee?.full_name || (user?.full_name && !user.full_name.includes('@') ? user.full_name : user?.email ? user.email.split('@')[0] : 'User');
+  const displayAvatar = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="space-y-6">
@@ -279,84 +292,7 @@ export default function MyWorkspace() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left Column: Profile Card & Announcements */}
-        <div className="lg:col-span-1 space-y-6">
-          
-          {/* Profile Details Summary Card */}
-          <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 space-y-6">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-primary-tint border border-primary/20 rounded-full flex items-center justify-center mx-auto mb-4 text-primary font-bold text-2xl uppercase">
-                {user.full_name.charAt(0)}
-              </div>
-              <h3 className="text-base font-bold text-navy">{user.full_name}</h3>
-              <p className="text-[10px] text-text-muted mt-1 uppercase tracking-wider font-semibold bg-background px-2.5 py-0.5 rounded-full border w-max mx-auto">
-                {user.role}
-              </p>
-            </div>
-
-            <div className="border-t border-border pt-4 space-y-3.5 text-xs text-text-muted">
-              <div className="flex justify-between">
-                <span className="font-semibold text-navy">System Login:</span>
-                <span className="text-text font-mono">{user.email}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold text-navy">Roster Link:</span>
-                {employee ? (
-                  <span className="text-success font-semibold flex items-center gap-0.5">
-                    <CheckCircle size={11} /> Linked
-                  </span>
-                ) : (
-                  <span className="text-text-muted italic">Unlinked</span>
-                )}
-              </div>
-              {employee && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-navy">Gender:</span>
-                    <span className="text-text capitalize">{employee.gender || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-navy">Date of Birth:</span>
-                    <span className="text-text font-mono">{employee.dob || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-navy">Personal Email:</span>
-                    <span className="text-text font-mono">{employee.personal_email || '—'}</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Announcements Feed Card */}
-          <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 space-y-4">
-            <h3 className="font-bold text-navy text-sm flex items-center gap-2 border-b border-border pb-3">
-              <Megaphone className="text-primary w-4.5 h-4.5" />
-              Company Announcements
-            </h3>
-
-            <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
-              {announcements.length === 0 ? (
-                <p className="text-xs text-text-muted italic py-4 text-center">No active announcements.</p>
-              ) : (
-                announcements.map((ann) => (
-                  <div key={ann.id} className="p-3 bg-background/50 border border-border rounded-lg space-y-1.5">
-                    <h4 className="font-bold text-navy text-xs flex justify-between gap-2">
-                      <span>{ann.title}</span>
-                      <span className="text-[9px] font-normal text-text-muted font-mono whitespace-nowrap">
-                        {new Date(ann.created_at).toLocaleDateString()}
-                      </span>
-                    </h4>
-                    <p className="text-xs text-text-muted leading-relaxed whitespace-pre-line">{ann.body}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        {/* Right Column: HR Records, Balances, & Leave History */}
+        {/* Main Column: HR Records, Balances, & Leave History */}
         <div className="lg:col-span-2 space-y-6">
           
           {/* Employee Record */}
@@ -570,6 +506,84 @@ export default function MyWorkspace() {
             </>
           )}
         </div>
+
+        {/* Sidebar Column: Announcements & System Profile Card */}
+        <div className="lg:col-span-1 space-y-6">
+          
+          {/* Announcements Feed Card */}
+          <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 space-y-4">
+            <h3 className="font-bold text-navy text-sm flex items-center gap-2 border-b border-border pb-3">
+              <Megaphone className="text-primary w-4.5 h-4.5" />
+              Company Announcements
+            </h3>
+
+            <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+              {announcements.length === 0 ? (
+                <p className="text-xs text-text-muted italic py-4 text-center">No active announcements.</p>
+              ) : (
+                announcements.map((ann) => (
+                  <div key={ann.id} className="p-3 bg-background/50 border border-border rounded-lg space-y-1.5">
+                    <h4 className="font-bold text-navy text-xs flex justify-between gap-2">
+                      <span>{ann.title}</span>
+                      <span className="text-[9px] font-normal text-text-muted font-mono whitespace-nowrap">
+                        {new Date(ann.created_at).toLocaleDateString()}
+                      </span>
+                    </h4>
+                    <p className="text-xs text-text-muted leading-relaxed whitespace-pre-line">{ann.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Profile Details Summary Card */}
+          <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-primary-tint border border-primary/20 rounded-full flex items-center justify-center mx-auto mb-4 text-primary font-bold text-2xl uppercase">
+                {displayAvatar}
+              </div>
+              <h3 className="text-base font-bold text-navy">{displayName}</h3>
+              <p className="text-[10px] text-text-muted mt-1 uppercase tracking-wider font-semibold bg-background px-2.5 py-0.5 rounded-full border w-max mx-auto select-none">
+                {user.role}
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 space-y-3.5 text-xs text-text-muted">
+              <div className="flex justify-between">
+                <span className="font-semibold text-navy">System Login:</span>
+                <span className="text-text font-mono">{user.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold text-navy">Roster Link:</span>
+                {employee ? (
+                  <span className="text-success font-semibold flex items-center gap-0.5">
+                    <CheckCircle size={11} /> Linked
+                  </span>
+                ) : (
+                  <span className="text-text-muted italic">Unlinked</span>
+                )}
+              </div>
+              {employee && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-navy">Gender:</span>
+                    <span className="text-text capitalize">{employee.gender || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-navy">Date of Birth:</span>
+                    <span className="text-text font-mono">{employee.dob || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-navy">Personal Email:</span>
+                    <span className="text-text font-mono">{employee.personal_email || '—'}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+        </div>
+
       </div>
 
       {/* LEAVE SUBMISSION MODAL */}
@@ -670,6 +684,15 @@ export default function MyWorkspace() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
+          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        `}>
+          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
+          <span className="text-xs font-semibold">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
         </div>
       )}
     </div>

@@ -35,6 +35,14 @@ export default function HRManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Toast Notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
@@ -216,8 +224,9 @@ export default function HRManagement() {
       setCreateModalOpen(false);
       resetForm();
       fetchHRData();
+      showToast('success', `Employee profile for ${fullName} registered successfully!`);
     } catch (err: any) {
-      alert(err.message || 'Failed to register employee');
+      showToast('error', err.message || 'Failed to register employee');
     }
   };
 
@@ -269,8 +278,9 @@ export default function HRManagement() {
       setEditModalOpen(false);
       resetForm();
       fetchHRData();
+      showToast('success', `Employee details for ${fullName} updated successfully!`);
     } catch (err: any) {
-      alert(err.message || 'Failed to update employee details');
+      showToast('error', err.message || 'Failed to update employee details');
     }
   };
 
@@ -300,8 +310,9 @@ export default function HRManagement() {
       setLinkModalOpen(false);
       setSelectedEmployee(null);
       fetchHRData();
+      showToast('success', `Linked employee ${selectedEmployee.full_name} successfully!`);
     } catch (err: any) {
-      alert(err.message || 'Failed to link account');
+      showToast('error', err.message || 'Failed to link account');
     }
   };
 
@@ -326,15 +337,16 @@ export default function HRManagement() {
       );
 
       fetchHRData();
+      showToast('success', `Revoked system portal access for ${emp.full_name}.`);
     } catch (err: any) {
-      alert(err.message || 'Failed to unlink account');
+      showToast('error', err.message || 'Failed to unlink account');
     }
   };
 
   // SEND SECURE PORTAL INVITE
   const handleSendInvite = async (emp: Employee) => {
     if (!emp.email) {
-      alert('Employee has no email address on file.');
+      showToast('error', 'Employee has no email address on file.');
       return;
     }
     
@@ -364,14 +376,14 @@ export default function HRManagement() {
         throw new Error(resData.error || 'Failed to send invite.');
       }
 
-      alert(resData.is_resend 
+      showToast('success', resData.is_resend 
         ? `Portal invitation email successfully resent to ${emp.email}!`
         : `Portal invitation email successfully sent to ${emp.email}!`
       );
       
       fetchHRData();
     } catch (err: any) {
-      alert('Error sending invite: ' + err.message);
+      showToast('error', 'Error sending invite: ' + err.message);
     } finally {
       setInvitingEmployeeId(null);
     }
@@ -395,8 +407,9 @@ export default function HRManagement() {
       setSelectedRequest(null);
       setApproverNotes('');
       fetchHRData();
+      showToast('success', `Leave request successfully ${reviewAction}ed!`);
     } catch (err: any) {
-      alert(err.message || 'Failed to submit leave request review');
+      showToast('error', err.message || 'Failed to submit leave request review');
     }
   };
 
@@ -1512,6 +1525,15 @@ export default function HRManagement() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
+          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        `}>
+          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
+          <span className="text-xs font-semibold">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
         </div>
       )}
     </div>

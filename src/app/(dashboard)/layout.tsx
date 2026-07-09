@@ -264,7 +264,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </button>
 
             <div className="hidden sm:flex flex-col text-right">
-              <span className="text-sm font-bold text-text leading-tight">{user.full_name}</span>
+              <span className="text-sm font-bold text-text leading-tight">
+                {employee ? employee.full_name : (user.full_name && !user.full_name.includes('@') ? user.full_name : user.email.split('@')[0])}
+              </span>
               <span className="text-xs text-text-muted leading-tight">{user.email}</span>
             </div>
 

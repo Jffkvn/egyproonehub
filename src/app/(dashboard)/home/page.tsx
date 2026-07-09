@@ -17,6 +17,17 @@ import {
 
 export default function HomeDashboard() {
   const { user, employee } = useAuth();
+  
+  const getGreetingName = () => {
+    if (employee?.full_name) {
+      return employee.full_name.trim().split(/\s+/)[0];
+    }
+    if (user?.full_name && !user.full_name.includes('@')) {
+      return user.full_name.trim().split(/\s+/)[0];
+    }
+    return user?.email ? user.email.split('@')[0] : 'User';
+  };
+
   const [projectCount, setProjectCount] = useState(0);
   const [employeeCount, setEmployeeCount] = useState(0);
   const [activeProjects, setActiveProjects] = useState<Project[]>([]);
@@ -351,7 +362,7 @@ export default function HomeDashboard() {
     <div className="space-y-6">
       <div className="bg-surface border border-border rounded-xl shadow-2xs p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-2xl font-bold text-navy">Welcome back, {user.full_name}!</h2>
+          <h2 className="text-2xl font-bold text-navy">Welcome back, {getGreetingName()}!</h2>
           <p className="text-sm text-text-muted mt-1.5 leading-relaxed">
             Here is your dashboard overview for today. Role-based view: <code className="text-primary font-bold">{user.role}</code>.
           </p>
