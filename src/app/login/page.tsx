@@ -6,10 +6,8 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -21,33 +19,17 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      if (isSignUp) {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName || email.split('@')[0],
-            }
-          }
-        });
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-        if (signUpError) throw signUpError;
-        alert('Account registration successful! You can now toggle to Sign In and log in.');
-        setIsSignUp(false);
-        setPassword('');
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (signInError) throw signInError;
-        router.replace('/home');
-      }
+      if (signInError) throw signInError;
+      
+      router.replace('/home');
     } catch (err: any) {
-      console.error('Auth error:', err);
-      setError(err.message || 'Authentication failed');
+      console.error('Login error:', err);
+      setError(err.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
@@ -69,7 +51,7 @@ export default function LoginPage() {
             Egypro Onehub
           </h2>
           <p className="mt-2 text-sm text-text-muted">
-            {isSignUp ? 'Create your platform login account' : 'Sign in to the unified business platform'}
+            Sign in to the unified business platform
           </p>
         </div>
 
@@ -81,24 +63,6 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-4">
-            {isSignUp && (
-              <div>
-                <label htmlFor="full-name" className="block text-xs font-bold text-navy uppercase tracking-wider mb-2">
-                  Full Name
-                </label>
-                <input
-                  id="full-name"
-                  name="fullName"
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="appearance-none block w-full px-3.5 py-2.5 border border-border rounded-lg placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-background text-text transition-all"
-                  placeholder="John Doe"
-                />
-              </div>
-            )}
-
             <div>
               <label htmlFor="email-address" className="block text-xs font-bold text-navy uppercase tracking-wider mb-2">
                 Email Address
@@ -124,7 +88,7 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 type="password"
-                autoComplete={isSignUp ? "new-password" : "current-password"}
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -134,7 +98,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div>
             <button
               type="submit"
               disabled={loading}
@@ -146,25 +110,12 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  <span>{isSignUp ? 'Registering...' : 'Signing in...'}</span>
+                  <span>Signing in...</span>
                 </span>
               ) : (
-                isSignUp ? 'Register Account' : 'Sign In'
+                'Sign In'
               )}
             </button>
-
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSignUp(!isSignUp);
-                  setError(null);
-                }}
-                className="text-xs font-semibold text-primary hover:underline"
-              >
-                {isSignUp ? 'Already have an account? Sign In' : 'Need a login profile? Create Account'}
-              </button>
-            </div>
           </div>
         </form>
       </div>
