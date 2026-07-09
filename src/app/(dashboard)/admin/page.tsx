@@ -593,12 +593,12 @@ export default function AdminSettings() {
         </div>
       </div>
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
-          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3.5 rounded-xl border shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-top-4 bg-surface text-navy font-sans max-w-md
+          ${toast.type === 'success' ? 'border-l-4 border-l-success border-border' : 'border-l-4 border-l-danger border-border'}
         `}>
-          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
-          <span className="text-xs font-semibold">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
+          <div className={`w-2 h-2 rounded-full shrink-0 ${toast.type === 'success' ? 'bg-success shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-danger shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`} />
+          <span className="text-xs font-bold text-navy leading-relaxed flex-1">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-sm text-text-muted hover:text-navy font-bold ml-1 px-1 py-0.5 rounded hover:bg-background">×</button>
         </div>
       )}
     </div>

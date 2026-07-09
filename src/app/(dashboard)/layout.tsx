@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -31,8 +31,118 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
+function SidebarNavList({
+  allowedNavItems,
+  sidebarCollapsed,
+  setMobileMenuOpen
+}: {
+  allowedNavItems: any[];
+  sidebarCollapsed: boolean;
+  setMobileMenuOpen: (open: boolean) => void;
+}) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeTabParam = searchParams?.get('tab');
+
+  const sections: { [key: string]: typeof allowedNavItems } = {};
+  allowedNavItems.forEach((item) => {
+    const sec = item.section || 'Menu';
+    if (!sections[sec]) sections[sec] = [];
+    sections[sec].push(item);
+  });
+
+  return (
+    <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+      {Object.entries(sections).map(([sectionTitle, items]) => (
+        <div key={sectionTitle} className="space-y-1">
+          {!sidebarCollapsed && (
+            <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-navy/70 uppercase tracking-wider select-none">
+              {sectionTitle}
+            </div>
+          )}
+          {items.map((item) => {
+            const Icon = item.icon;
+            const isActive = item.href === '/home' 
+              ? pathname === '/home' 
+              : pathname?.startsWith(item.href);
+
+            return (
+              <div key={item.name} className="space-y-0.5">
+                <Link
+                  href={item.href}
+                  className={`flex items-center space-x-3.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
+                    ${isActive
+                      ? 'bg-primary-tint text-primary font-semibold'
+                      : 'text-text hover:bg-background hover:text-navy'}
+                  `}
+                  title={sidebarCollapsed ? item.name : undefined}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Icon
+                    size={19}
+                    className={`transition-colors duration-150 flex-shrink-0
+                      ${isActive ? 'text-primary' : 'text-text-muted group-hover:text-navy'}
+                    `}
+                  />
+                  {!sidebarCollapsed && <span className="truncate">{item.name}</span>}
+                </Link>
+
+                {/* Render Sub-Items when parent is active or expanded and not collapsed */}
+                {item.subItems && !sidebarCollapsed && (isActive || pathname?.startsWith(item.href)) && (
+                  <div className="ml-7 pl-3 border-l-2 border-primary/20 space-y-1 pt-1 pb-1.5">
+                    {item.subItems.map((sub: any) => {
+                      const isSubActive = pathname?.startsWith(item.href) && (
+                        (activeTabParam === sub.tabKey) ||
+                        (!activeTabParam && sub.tabKey === 'directory')
+                      );
+
+                      return (
+                        <Link
+                          key={sub.name}
+                          href={sub.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={`flex items-center justify-between py-1.5 px-2.5 rounded-md text-xs font-medium transition-all ${
+                            isSubActive
+                              ? 'bg-primary/10 text-primary font-bold shadow-2xs'
+                              : 'text-text-muted hover:text-navy hover:bg-background/80'
+                          }`}
+                        >
+                          <span className="truncate">{sub.name}</span>
+                          {sub.badge && sub.badge > 0 ? (
+                            <span className="px-1.5 py-0.5 text-[10px] font-extrabold bg-warning text-navy rounded-full">
+                              {sub.badge}
+                            </span>
+                          ) : null}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+function DynamicNavbarTitle({ navItems }: { navItems: any[] }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeTabParam = searchParams?.get('tab');
+
+  if (pathname?.startsWith('/hr')) {
+    if (activeTabParam === 'leaves') return <>HR Management · Leaves & Holidays</>;
+    if (activeTabParam === 'payroll') return <>HR Management · Payroll Processing</>;
+    return <>HR Management · Directory & Profiles</>;
+  }
+  const activeItem = navItems.find((item) => pathname?.startsWith(item.href));
+  return <>{activeItem ? activeItem.name : 'Egypro Onehub'}</>;
+}
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, employee, effectiveModules, loading, signOut } = useAuth();
+  const { user, employee, effectiveModules, loading, signOut, showPasswordResetModal, setShowPasswordResetModal } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -60,12 +170,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // Fetch organization settings (single-row global config)
   useEffect(() => {
     const fetchOrgSettings = async () => {
-      if (!isSupabaseConfigured || !user) return;
+      if (!isSupabaseConfigured) return;
       try {
         const { data, error } = await supabase
           .from('organization_settings')
           .select('*')
-          .eq('id', true)
           .single();
         if (!error && data) {
           setOrgSettings(data as OrganizationSettings);
@@ -75,17 +184,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     };
     fetchOrgSettings();
-  }, [user]);
+  }, []);
 
-  // Check URL hash for invitation/recovery link tokens
+  // Check URL hash for invitation/recovery link tokens and sync with AuthContext
   useEffect(() => {
+    if (showPasswordResetModal) {
+      setShowInvitePasswordModal(true);
+    }
     if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash.includes('type=invite') || hash.includes('type=recovery') || hash.includes('recovery')) {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      if (
+        hash.includes('type=invite') ||
+        hash.includes('type=recovery') ||
+        hash.includes('recovery') ||
+        search.includes('type=invite') ||
+        search.includes('type=recovery')
+      ) {
         setShowInvitePasswordModal(true);
       }
     }
-  }, []);
+  }, [showPasswordResetModal]);
 
   // Fetch pending leave reviews count for HR Admins
   useEffect(() => {
@@ -100,7 +219,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           setPendingLeaveCount(count);
         }
       } catch (err) {
-        console.error('Error fetching pending leave reviews count:', err);
+        console.error('Error fetching pending leave count:', err);
       }
     };
     fetchPendingCount();
@@ -127,6 +246,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       // Successfully saved password! Clear states
       setShowInvitePasswordModal(false);
+      setShowPasswordResetModal(false);
       setNewPassword('');
       setConfirmPassword('');
       
@@ -167,50 +287,72 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     md: 'Managing Director'
   };
 
-  const navItems = [
+  interface NavItem {
+    name: string;
+    href: string;
+    icon: any;
+    moduleKey: string;
+    section?: string;
+    subItems?: { name: string; href: string; tabKey: string; badge?: number }[];
+  }
+
+  const navItems: NavItem[] = [
     {
+      section: 'Overview',
       name: 'Home Dashboard',
       href: '/home',
       icon: Home,
-      moduleKey: 'home' // public to all logged in
+      moduleKey: 'home'
     },
     {
+      section: 'People & Workspace',
       name: 'My Workspace',
       href: '/my',
       icon: User,
-      moduleKey: 'my' // always allowed
+      moduleKey: 'my'
     },
     {
+      section: 'People & Workspace',
       name: 'HR Management',
       href: '/hr',
       icon: Users,
-      moduleKey: 'hr'
+      moduleKey: 'hr',
+      subItems: [
+        { name: 'Directory & Profiles', href: '/hr?tab=directory', tabKey: 'directory' },
+        { name: 'Leaves & Holidays', href: '/hr?tab=leaves', tabKey: 'leaves', badge: pendingLeaveCount },
+        { name: 'Payroll Processing', href: '/hr?tab=payroll', tabKey: 'payroll' },
+      ]
     },
     {
+      section: 'Operations & Finance',
       name: 'Inventory Operations',
       href: '/inventory',
       icon: Package,
       moduleKey: 'inventory'
     },
     {
+      section: 'Operations & Finance',
       name: 'Project Cash Control',
       href: '/cash',
       icon: Coins,
       moduleKey: 'cash'
     },
     {
+      section: 'Operations & Finance',
       name: 'Daily Tracker',
       href: '/tracker',
       icon: FileText,
       moduleKey: 'tracker'
     },
     {
+      section: 'System & Reports',
       name: 'Reports & Audits',
       href: '/reports',
       icon: FileSpreadsheet,
       moduleKey: 'reports'
     },
     {
+      section: 'System & Reports',
       name: 'System Admin',
       href: '/admin',
       icon: SettingsIcon,
@@ -222,11 +364,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const allowedNavItems = navItems.filter(
     (item) => item.moduleKey === 'home' || effectiveModules.includes(item.moduleKey)
   );
-
-  const getPageTitle = () => {
-    const activeItem = navItems.find((item) => pathname?.startsWith(item.href));
-    return activeItem ? activeItem.name : 'Egypro Onehub';
-  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -270,37 +407,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-          {allowedNavItems.map((item) => {
-            const Icon = item.icon;
-            // Exact or sub-path match for active styling
-            const isActive = item.href === '/home' 
-              ? pathname === '/home' 
-              : pathname?.startsWith(item.href);
-              
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center space-x-3.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
-                  ${isActive
-                    ? 'bg-primary-tint text-primary'
-                    : 'text-text hover:bg-background hover:text-navy'}
-                `}
-                title={sidebarCollapsed ? item.name : undefined}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <Icon
-                  size={19}
-                  className={`transition-colors duration-150
-                    ${isActive ? 'text-primary' : 'text-text-muted group-hover:text-navy'}
-                  `}
-                />
-                {!sidebarCollapsed && <span className="truncate">{item.name}</span>}
-              </Link>
-            );
-          })}
-        </nav>
+        <Suspense fallback={<nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto" />}>
+          <SidebarNavList
+            allowedNavItems={allowedNavItems}
+            sidebarCollapsed={sidebarCollapsed}
+            setMobileMenuOpen={setMobileMenuOpen}
+          />
+        </Suspense>
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-border space-y-1 bg-surface">
@@ -335,7 +448,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <Menu size={22} />
             </button>
             <h1 className="text-base font-bold text-navy select-none tracking-tight">
-              {getPageTitle()}
+              <Suspense fallback={<span>Egypro Onehub</span>}>
+                <DynamicNavbarTitle navItems={navItems} />
+              </Suspense>
             </h1>
           </div>
 
@@ -461,12 +576,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* LAYOUT TOAST NOTIFICATIONS */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
-          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3.5 rounded-xl border shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-top-4 bg-surface text-navy font-sans max-w-md
+          ${toast.type === 'success' ? 'border-l-4 border-l-success border-border' : 'border-l-4 border-l-danger border-border'}
         `}>
-          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
-          <span className="text-xs font-semibold">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
+          <div className={`w-2 h-2 rounded-full shrink-0 ${toast.type === 'success' ? 'bg-success shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-danger shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`} />
+          <span className="text-xs font-bold text-navy leading-relaxed flex-1">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-sm text-text-muted hover:text-navy font-bold ml-1 px-1 py-0.5 rounded hover:bg-background">×</button>
         </div>
       )}
 

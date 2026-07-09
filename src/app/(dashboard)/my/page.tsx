@@ -95,6 +95,7 @@ export default function MyWorkspace() {
   const [daysRequested, setDaysRequested] = useState(0);
   const [reason, setReason] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
 
   // Toast Notification state
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -218,31 +219,20 @@ export default function MyWorkspace() {
     if (!user || !isSupabaseConfigured) return;
     setLoading(true);
     try {
-      // 1. Fetch leave types
-      const { data: ltData, error: ltError } = await supabase
-        .from('leave_types')
-        .select('*')
-        .eq('is_active', true);
-      
-      if (ltError) throw ltError;
-      const types = (ltData || []) as LeaveType[];
+      // Parallelize base queries
+      const [ltRes, annRes, holRes] = await Promise.all([
+        supabase.from('leave_types').select('*').eq('is_active', true),
+        supabase.from('announcements').select('*').eq('is_active', true).order('created_at', { ascending: false }),
+        supabase.from('public_holidays').select('holiday_date')
+      ]);
+
+      if (ltRes.error) throw ltRes.error;
+      if (annRes.error) throw annRes.error;
+
+      const types = (ltRes.data || []) as LeaveType[];
       setLeaveTypes(types);
-
-      // 2. Fetch announcements
-      const { data: annData, error: annError } = await supabase
-        .from('announcements')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-      
-      if (annError) throw annError;
-      setAnnouncements((annData || []) as Announcement[]);
-
-      // 3. Fetch public holidays list
-      const { data: holData } = await supabase
-        .from('public_holidays')
-        .select('holiday_date');
-      setHolidaysList(holData?.map((h: any) => h.holiday_date) || []);
+      setAnnouncements((annRes.data || []) as Announcement[]);
+      setHolidaysList(holRes.data?.map((h: any) => h.holiday_date) || []);
 
       // If no employee linked, we can skip fetching history, attachments, payroll, and computing balances
       if (!employee) {
@@ -250,32 +240,18 @@ export default function MyWorkspace() {
         return;
       }
 
-      // 4. Fetch employee leave history
-      const { data: lhData, error: lhError } = await supabase
-        .from('leave_requests')
-        .select('*, leave_types(name, code)')
-        .eq('employee_id', employee.id)
-        .order('created_at', { ascending: false });
-      
-      if (lhError) throw lhError;
-      const requests = (lhData || []) as LeaveRequest[];
+      // Parallelize employee-specific queries
+      const [lhRes, docRes, payRes] = await Promise.all([
+        supabase.from('leave_requests').select('*, leave_types(name, code)').eq('employee_id', employee.id).order('created_at', { ascending: false }),
+        supabase.from('employee_attachments').select('*').eq('employee_id', employee.id).order('uploaded_at', { ascending: false }),
+        supabase.from('payroll_runs').select('*, payroll_periods(name, start_date, end_date)').eq('employee_id', employee.id).order('created_at', { ascending: false })
+      ]);
+
+      if (lhRes.error) throw lhRes.error;
+      const requests = (lhRes.data || []) as LeaveRequest[];
       setLeaveHistory(requests);
-
-      // 5. Fetch employee secure documents
-      const { data: docData } = await supabase
-        .from('employee_attachments')
-        .select('*')
-        .eq('employee_id', employee.id)
-        .order('uploaded_at', { ascending: false });
-      setMyAttachments(docData || []);
-
-      // 6. Fetch employee finalized payslips
-      const { data: payData } = await supabase
-        .from('payroll_runs')
-        .select('*, payroll_periods(name, start_date, end_date)')
-        .eq('employee_id', employee.id)
-        .order('created_at', { ascending: false });
-      setMyPayslips(payData || []);
+      setMyAttachments(docRes.data || []);
+      setMyPayslips(payRes.data || []);
 
       // 7. Compute provisional leave balances
       const currentYear = new Date().getFullYear();
@@ -334,7 +310,7 @@ export default function MyWorkspace() {
   // SUBMIT LEAVE REQUEST
   const handleApplyLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employee || !user || !isSupabaseConfigured) return;
+    if (!employee || !user || !isSupabaseConfigured || isSubmittingLeave) return;
     
     // Final validations
     const validation = validateLeaveDates(startDate, endDate);
@@ -357,20 +333,8 @@ export default function MyWorkspace() {
       }
     }
 
-    // Check overlapping requests
-    const hasOverlap = leaveHistory.some(req => {
-      if (req.status === 'rejected' || req.status === 'cancelled') return false;
-      const reqStart = new Date(req.start_date);
-      const reqEnd = new Date(req.end_date);
-      const newStart = new Date(startDate);
-      const newEnd = new Date(endDate);
-      return (newStart <= reqEnd && newEnd >= reqStart);
-    });
-    if (hasOverlap) {
-      setFormError('Submit Block: You have an overlapping pending or approved leave request during this date range.');
-      return;
-    }
-
+    setIsSubmittingLeave(true);
+    setFormError(null);
     try {
       const { data, error: insertError } = await supabase
         .from('leave_requests')
@@ -389,9 +353,18 @@ export default function MyWorkspace() {
 
       if (insertError) throw insertError;
 
-      // Write Audit log
+      // Close modal immediately and reset form fields for instant visual feedback
+      setApplyModalOpen(false);
+      setLeaveTypeId('');
+      setStartDate('');
+      setEndDate('');
+      setDaysRequested(0);
+      setReason('');
+      showToast('success', 'Leave request submitted successfully!');
+
+      // Write Audit log without blocking UI
       const typeName = leaveTypes.find(t => t.id === leaveTypeId)?.name || 'Leave';
-      await writeAuditLog(
+      writeAuditLog(
         user.id,
         'LEAVE_REQUEST_CREATE',
         'leave_requests',
@@ -399,17 +372,11 @@ export default function MyWorkspace() {
         `Submitted leave request for ${daysRequested} day(s) of ${typeName} (${startDate} to ${endDate})`
       );
 
-      setApplyModalOpen(false);
-      // Reset form
-      setLeaveTypeId('');
-      setStartDate('');
-      setEndDate('');
-      setDaysRequested(0);
-      setReason('');
       fetchWorkspaceData();
-      showToast('success', 'Leave request submitted successfully!');
     } catch (err: any) {
       setFormError(err.message || 'Failed to submit leave request.');
+    } finally {
+      setIsSubmittingLeave(false);
     }
   };
 
@@ -1015,14 +982,23 @@ export default function MyWorkspace() {
               <div className="border-t border-border pt-4 flex gap-3 text-xs">
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/95 transition-all shadow-md text-center"
+                  disabled={isSubmittingLeave}
+                  className="flex-1 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/95 transition-all shadow-md text-center flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit Application
+                  {isSubmittingLeave ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Application'
+                  )}
                 </button>
                 <button
                   type="button"
+                  disabled={isSubmittingLeave}
                   onClick={() => setApplyModalOpen(false)}
-                  className="flex-1 py-2 border border-border hover:bg-background text-text font-bold rounded-lg transition-all text-center"
+                  className="flex-1 py-2 border border-border hover:bg-background text-text font-bold rounded-lg transition-all text-center disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -1166,12 +1142,12 @@ export default function MyWorkspace() {
       )}
 
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 animate-in fade-in slide-in-from-top-4
-          ${toast.type === 'success' ? 'bg-success-tint border-success/30 text-success' : 'bg-danger-tint border-danger/30 text-danger'}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3.5 rounded-xl border shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-top-4 bg-surface text-navy font-sans max-w-md
+          ${toast.type === 'success' ? 'border-l-4 border-l-success border-border' : 'border-l-4 border-l-danger border-border'}
         `}>
-          <div className={`w-1.5 h-1.5 rounded-full ${toast.type === 'success' ? 'bg-success' : 'bg-danger'}`} />
-          <span className="text-xs font-semibold">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-xs opacity-60 hover:opacity-100 font-bold ml-1.5">×</button>
+          <div className={`w-2 h-2 rounded-full shrink-0 ${toast.type === 'success' ? 'bg-success shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-danger shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`} />
+          <span className="text-xs font-bold text-navy leading-relaxed flex-1">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-sm text-text-muted hover:text-navy font-bold ml-1 px-1 py-0.5 rounded hover:bg-background">×</button>
         </div>
       )}
     </div>

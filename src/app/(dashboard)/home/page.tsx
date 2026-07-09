@@ -39,40 +39,19 @@ export default function HomeDashboard() {
     const loadDashboardData = async () => {
       if (!isSupabaseConfigured || !user) return;
       try {
-        // Fetch project count
-        const { count: projCount } = await supabase
-          .from('projects')
-          .select('*', { count: 'exact', head: true });
-        setProjectCount(projCount || 0);
+        const [projRes, empRes, listRes, assignRes, leavesRes] = await Promise.all([
+          supabase.from('projects').select('*', { count: 'exact', head: true }),
+          supabase.from('employees').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+          supabase.from('projects').select('*').eq('status', 'active').limit(3),
+          supabase.from('project_assignments').select('*', { count: 'exact', head: true }).eq('user_id', user.id).is('unassigned_at', null),
+          supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending')
+        ]);
 
-        // Fetch employee count
-        const { count: empCount } = await supabase
-          .from('employees')
-          .select('*', { count: 'exact', head: true });
-          setEmployeeCount(empCount || 0);
-
-        // Fetch top active projects
-        const { data: projList } = await supabase
-          .from('projects')
-          .select('*')
-          .eq('status', 'active')
-          .limit(3);
-        setActiveProjects((projList as Project[]) || []);
-
-        // Fetch active user assignments count
-        const { count: assignCount } = await supabase
-          .from('project_assignments')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .is('unassigned_at', null);
-        setAssignedProjectsCount(assignCount || 0);
-
-        // Fetch pending leaves count
-        const { count: leavesCount } = await supabase
-          .from('leave_requests')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'pending');
-        setPendingLeavesCount(leavesCount || 0);
+        setProjectCount(projRes.count || 0);
+        setEmployeeCount(empRes.count || 0);
+        setActiveProjects((listRes.data as Project[]) || []);
+        setAssignedProjectsCount(assignRes.count || 0);
+        setPendingLeavesCount(leavesRes.count || 0);
       } catch (err) {
         console.error('Error loading dashboard stats:', err);
       }
@@ -390,9 +369,9 @@ export default function HomeDashboard() {
             </p>
           )}
         </div>
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0" suppressHydrationWarning>
           <span className="text-xs text-text-muted font-bold block mb-1 uppercase tracking-wider">Current Time</span>
-          <span className="text-navy font-mono font-bold text-sm bg-background border border-border px-3 py-1.5 rounded-lg">
+          <span className="text-navy font-mono font-bold text-sm bg-background border border-border px-3 py-1.5 rounded-lg" suppressHydrationWarning>
             {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </span>
         </div>
